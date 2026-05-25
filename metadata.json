@@ -1,6 +1,6 @@
 {
-  "name": "",
-  "description": "",
+  "name": "E-Fawaaed",
+  "description": "Mini tools untuk pelajar dengan fitur muroja'ah, muthola'ah, dan catatan produktif.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
