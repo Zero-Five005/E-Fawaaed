@@ -313,6 +313,7 @@ export default function App() {
   const [calendarDate, setCalendarDate] = useState(new Date());
   const [activePopup, setActivePopup] = useState<'none' | 'murojaah' | 'mutholaah' | 'produktif'>('none');
   const [showAdminPopup, setShowAdminPopup] = useState(false);
+  const [adminEmail, setAdminEmail] = useState('');
   const [adminPassword, setAdminPassword] = useState('');
   const [isAdminLoggedIn, setIsAdminLoggedIn] = useState(false);
   const [streakCount, setStreakCount] = useState(0);
@@ -334,22 +335,46 @@ export default function App() {
 
   useEffect(() => {
     localStorage.setItem('efawaaedTheme', theme);
-    document.documentElement.className = theme === 'blue' ? 'theme-blue' : theme === 'brown' ? 'theme-brown' : '';
+    document.documentElement.classList.remove('theme-blue', 'theme-brown');
+    if (theme === 'blue') document.documentElement.classList.add('theme-blue');
+    if (theme === 'brown') document.documentElement.classList.add('theme-brown');
   }, [theme]);
 
   useEffect(() => {
-    const savedDates = JSON.parse(localStorage.getItem('efawaaedActivityDates') || '[]');
-    setStreakCount(savedDates.length);
+    let deviceId = localStorage.getItem('efawaaedDeviceId');
+    if (!deviceId) {
+      deviceId = crypto.randomUUID();
+      localStorage.setItem('efawaaedDeviceId', deviceId);
+    }
+
+    const fetchStreak = async () => {
+      import('./lib/supabase').then(async ({ supabase }) => {
+        const { data } = await supabase.from('daily_streaks').select('*').eq('device_id', deviceId);
+        if (data) {
+          setStreakCount(data.length);
+        }
+      });
+    };
+    fetchStreak();
   }, []);
 
   const recordStreak = () => {
-    const today = new Date().toISOString().split('T')[0];
-    const savedDates = JSON.parse(localStorage.getItem('efawaaedActivityDates') || '[]');
-    if (!savedDates.includes(today)) {
-      const newDates = [...savedDates, today];
-      localStorage.setItem('efawaaedActivityDates', JSON.stringify(newDates));
-      setStreakCount(newDates.length);
-    }
+    const deviceId = localStorage.getItem('efawaaedDeviceId');
+    if (!deviceId) return;
+
+    const d = new Date();
+    d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+    const today = d.toISOString().split('T')[0];
+
+    import('./lib/supabase').then(async ({ supabase }) => {
+      const { error } = await supabase.from('daily_streaks').insert({ device_id: deviceId, date: today });
+      if (!error) {
+        setStreakCount(prev => prev + 1);
+      } else {
+        const { data } = await supabase.from('daily_streaks').select('*').eq('device_id', deviceId);
+        if (data) setStreakCount(data.length);
+      }
+    });
   };
 
   const handleRippleClick = (e: React.MouseEvent<HTMLButtonElement>, callback: () => void) => {
@@ -439,17 +464,6 @@ export default function App() {
           scrollTrigger: {
             trigger: '#tentang',
             start: "top 70%",
-          }
-        }
-      );
-
-      gsap.fromTo('footer',
-        { y: 50, opacity: 0 },
-        { 
-          y: 0, opacity: 1, duration: 0.8, ease: "power3.out", delay: 0.2,
-          scrollTrigger: {
-            trigger: 'footer',
-            start: "top bottom",
           }
         }
       );
@@ -744,43 +758,54 @@ export default function App() {
 
       {/* Mobile dropdown */}
       {menuOpen && (
-        <div className="fixed top-0 left-0 right-0 z-40 bg-theme-lightest pt-16 pb-6 px-5 shadow-lg flex flex-col gap-1 lg:hidden">
-          {navItems.map((item) => (
-            <button 
-              key={item.id}
-              onClick={() => scrollToSection(item.id)}
-              className={`${
-                activeSection === item.id ? 'text-theme-mid font-semibold' : 'text-theme-darkest font-medium'
-              } text-base py-3 border-b border-theme-light-mid/20 text-left hover:text-theme-mid transition-colors`}
-            >
-              {item.label}
-            </button>
-          ))}
-          
-          {/* Mobile Theme Toggle */}
-          <div className="mt-4 pt-4 border-t border-theme-light-mid/20 flex flex-col items-center">
-            <ThemeToggle currentTheme={theme} onThemeChange={setTheme} />
-          </div>
+        <div 
+          className="fixed inset-0 z-40 bg-black/20 backdrop-blur-sm lg:hidden"
+          onClick={() => setMenuOpen(false)}
+        >
+          <div 
+            className="absolute top-0 left-0 right-0 bg-theme-lightest pt-24 pb-8 px-5 shadow-2xl flex flex-col gap-1 rounded-b-3xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {navItems.map((item) => (
+              <button 
+                key={item.id}
+                onClick={() => {
+                  scrollToSection(item.id);
+                  setMenuOpen(false);
+                }}
+                className={`${
+                  activeSection === item.id ? 'text-theme-mid font-semibold' : 'text-theme-darkest font-medium'
+                } text-base py-3 border-b border-theme-light-mid/20 text-left hover:text-theme-mid transition-colors`}
+              >
+                {item.label}
+              </button>
+            ))}
+            
+            {/* Mobile Theme Toggle */}
+            <div className="md:hidden mt-4 pt-4 border-t border-theme-light-mid/20 flex flex-col items-center">
+              <ThemeToggle currentTheme={theme} onThemeChange={setTheme} />
+            </div>
 
-          {/* Mobile Greeting & Date (CTA Replacement) */}
-          <div className="mt-4 pt-4 border-t border-theme-light-mid/20 flex flex-col items-center relative" ref={mobileCalendarRef}>
-            <div className="flex items-center gap-2.5 mb-3">
-              <GreetingIcon type={greetingInfo.type} className="w-6 h-6 flex-shrink-0" />
-              <div className="text-lg font-bold text-theme-darkest text-center tracking-tight">{greetingInfo.text}!</div>
-            </div>
-            <div 
-              onClick={() => setShowCalendar(!showCalendar)}
-              className="text-[11px] text-theme-mid flex flex-col sm:flex-row items-center justify-center cursor-pointer bg-white/40 px-4 py-3 rounded-xl w-full text-center border border-theme-light-mid/20 hover:bg-white/60 transition-colors gap-1 sm:gap-0"
-            >
-              <span className="font-medium text-xs text-theme-darkest">{masehiDate}</span>
-              <span className="hidden sm:inline mx-1.5 text-theme-darkest opacity-50 font-bold">/</span>
-              <span className="font-semibold text-xs italic sm:not-italic">{hijriahDate}</span>
-            </div>
-            {showCalendar && (
-              <div className="relative mt-2 w-full flex justify-center">
-                 <CalendarPopup currentDate={calendarDate} setCurrentDate={setCalendarDate} />
+            {/* Mobile Greeting & Date (CTA Replacement) */}
+            <div className="md:hidden mt-4 pt-4 border-t border-theme-light-mid/20 flex flex-col items-center relative" ref={mobileCalendarRef}>
+              <div className="flex items-center gap-2.5 mb-3">
+                <GreetingIcon type={greetingInfo.type} className="w-6 h-6 flex-shrink-0" />
+                <div className="text-lg font-bold text-theme-darkest text-center tracking-tight">{greetingInfo.text}!</div>
               </div>
-            )}
+              <div 
+                onClick={() => setShowCalendar(!showCalendar)}
+                className="text-[11px] text-theme-mid flex flex-col sm:flex-row items-center justify-center cursor-pointer bg-black/5 px-4 py-3 rounded-xl w-full text-center hover:bg-black/10 transition-colors gap-1 sm:gap-0"
+              >
+                <span className="font-medium text-xs text-theme-darkest">{masehiDate}</span>
+                <span className="hidden sm:inline mx-1.5 text-theme-darkest opacity-50 font-bold">/</span>
+                <span className="font-semibold text-xs italic sm:not-italic">{hijriahDate}</span>
+              </div>
+              {showCalendar && (
+                <div className="relative mt-2 w-full flex justify-center">
+                   <CalendarPopup currentDate={calendarDate} setCurrentDate={setCalendarDate} />
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -1207,9 +1232,16 @@ export default function App() {
               </div>
               <h2 className="text-2xl font-bold text-theme-darkest">Akses Admin</h2>
               <p className="text-sm text-theme-mid">
-                Silakan masukkan kata sandi untuk menambah atau mengedit file PDF dan TXT.
+                Silakan login untuk menambah atau mengedit file.
               </p>
-              <div className="w-full mt-4 space-y-4">
+              <div className="w-full mt-4 space-y-3">
+                <input 
+                  type="email" 
+                  placeholder="Email" 
+                  value={adminEmail}
+                  onChange={(e) => setAdminEmail(e.target.value)}
+                  className="w-full px-4 py-3 rounded-xl border border-theme-light-mid/40 focus:border-theme-mid focus:ring-2 focus:ring-theme-mid/20 outline-none transition-all placeholder:text-theme-light-mid"
+                />
                 <input 
                   type="password" 
                   placeholder="Kata Sandi" 
@@ -1219,14 +1251,21 @@ export default function App() {
                 />
                 <button 
                   onClick={() => {
-                    if (adminPassword === 'jagonahwu') {
-                      setIsAdminLoggedIn(true);
-                      setShowAdminPopup(false);
-                      setAdminPassword('');
-                    } else {
-                      alert('Kata sandi salah.');
-                      setAdminPassword('');
-                    }
+                    import('./lib/supabase').then(async ({ supabase }) => {
+                      const { error } = await supabase.auth.signInWithPassword({
+                        email: adminEmail,
+                        password: adminPassword,
+                      });
+                      
+                      if (!error) {
+                        setIsAdminLoggedIn(true);
+                        setShowAdminPopup(false);
+                        setAdminPassword('');
+                        setAdminEmail('');
+                      } else {
+                        alert('Login gagal: ' + error.message);
+                      }
+                    });
                   }}
                   className="w-full bg-theme-darkest text-theme-lightest font-semibold py-3 rounded-xl hover:bg-theme-mid transition-colors shadow-lg shadow-theme-darkest/20"
                 >
