@@ -180,11 +180,11 @@ export const ReaderOverlay: React.FC<ReaderOverlayProps> = ({ card, onClose, pdf
       return (
         <p 
           key={pIndex} 
-          className="mb-6 text-[22px] md:text-[24px] text-right font-arabic"
+          className="mb-4 text-[18px] md:text-[22px] text-right font-arabic"
           style={{ 
             fontFamily: "'Noto Naskh Arabic', serif", 
             direction: 'rtl',
-            lineHeight: 2.2
+            lineHeight: 1.8
           }}
         >
           {content}

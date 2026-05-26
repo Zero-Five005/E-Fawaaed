@@ -286,7 +286,18 @@ const CardEditor = ({ card, type, onSave, onCancel, toBase64 }: { card: CardItem
                   </label>
                </div>
                <div className="text-xs text-center opacity-50 font-bold">- Atau ketik langsung -</div>
-               <textarea value={form.txtContent || ''} onChange={e => setForm({...form, txtContent: e.target.value})} rows={5} className="w-full border border-blue-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-blue-400 bg-white" placeholder="Isi teks materi disini..."/>
+               <textarea 
+                  value={form.txtContent || ''} 
+                  onChange={e => setForm({...form, txtContent: e.target.value})} 
+                  rows={8} 
+                  className="w-full border border-blue-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400 bg-white" 
+                  style={{ 
+                    direction: 'rtl', 
+                    textAlign: 'right', 
+                    fontFamily: "'Noto Naskh Arabic', serif",
+                    lineHeight: 1.6
+                  }}
+                  placeholder="Isi teks materi disini..."/>
              </div>
            </div>
         )}
