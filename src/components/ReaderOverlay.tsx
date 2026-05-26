@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, BookOpen, FileText, ChevronLeft, ChevronRight, Search, Settings, Maximize2 } from 'lucide-react';
+import { X, BookOpen, FileText, ChevronLeft, ChevronRight, Search, Sun, Moon } from 'lucide-react';
 import { CardItem } from '../lib/store';
 import { Document, Page, pdfjs } from 'react-pdf';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
@@ -15,6 +15,88 @@ interface ReaderOverlayProps {
   pdfOnly?: boolean; 
 }
 
+interface LazyPDFPageProps {
+  pageNumber: number;
+  width: number;
+  renderTextLayer: boolean;
+  renderAnnotationLayer: boolean;
+}
+
+const LazyPDFPage: React.FC<LazyPDFPageProps> = ({
+  pageNumber,
+  width,
+  renderTextLayer,
+  renderAnnotationLayer,
+}) => {
+  const [isVisible, setIsVisible] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [aspectRatio, setAspectRatio] = useState<number>(1.414); // Default A4 aspect ratio
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        setIsVisible(entry.isIntersecting);
+      },
+      {
+        rootMargin: '800px 0px 800px 0px', // Pre-render 800px before/after viewport
+        threshold: 0,
+      }
+    );
+
+    observer.observe(containerRef.current);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, []);
+
+  const handlePageLoadSuccess = (page: any) => {
+    if (page && page.width && page.height) {
+      setAspectRatio(page.height / page.width);
+    }
+  };
+
+  const calculatedHeight = width * aspectRatio;
+
+  return (
+    <div 
+      ref={containerRef} 
+      className="shadow-2xl ring-1 ring-gray-900/5 bg-white mb-8 transition-opacity duration-300 relative shrink-0"
+      style={{ 
+        width: `${width}px`, 
+        height: `${calculatedHeight}px`,
+      }}
+    >
+      {isVisible ? (
+        <Page 
+          pageNumber={pageNumber} 
+          width={width}
+          renderTextLayer={renderTextLayer}
+          renderAnnotationLayer={renderAnnotationLayer}
+          onLoadSuccess={handlePageLoadSuccess}
+          loading={
+            <div 
+              className="flex items-center justify-center bg-gray-50 text-gray-400 text-xs font-semibold animate-pulse absolute inset-0"
+              style={{ height: `${calculatedHeight}px` }}
+            >
+              Memuat Halaman {pageNumber}...
+            </div>
+          }
+        />
+      ) : (
+        <div 
+          className="flex items-center justify-center bg-gray-50 text-gray-400 text-xs font-semibold absolute inset-0"
+          style={{ height: `${calculatedHeight}px` }}
+        >
+          Halaman {pageNumber}
+        </div>
+      )}
+    </div>
+  );
+};
+
 export const ReaderOverlay: React.FC<ReaderOverlayProps> = ({ card, onClose, pdfOnly = false }) => {
   const [activeTab, setActiveTab] = useState<'pdf' | 'txt'>(pdfOnly ? 'pdf' : (card.pdfFile ? 'pdf' : 'txt'));
   
@@ -23,9 +105,43 @@ export const ReaderOverlay: React.FC<ReaderOverlayProps> = ({ card, onClose, pdf
   const [pageNumber, setPageNumber] = useState<number>(1);
   const [pdfMode, setPdfMode] = useState<'vertical' | 'horizontal'>('vertical');
   const [pdfScale, setPdfScale] = useState(1);
+  const [aspectRatio, setAspectRatio] = useState<number>(1.414); // For book mode containing
   
   // TXT State
   const [searchQuery, setSearchQuery] = useState('');
+  const [textMode, setTextMode] = useState<'light' | 'dark'>(() => {
+    return (localStorage.getItem('efawaaed_text_reader_theme') as 'light' | 'dark') || 'light';
+  });
+
+  useEffect(() => {
+    localStorage.setItem('efawaaed_text_reader_theme', textMode);
+  }, [textMode]);
+
+  // Container dimensions
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [containerWidth, setContainerWidth] = useState<number>(0);
+  const [containerHeight, setContainerHeight] = useState<number>(0);
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+    
+    // Set initial dimensions
+    setContainerWidth(containerRef.current.clientWidth);
+    setContainerHeight(containerRef.current.clientHeight);
+
+    const resizeObserver = new ResizeObserver((entries) => {
+      for (let entry of entries) {
+        setContainerWidth(entry.contentRect.width);
+        setContainerHeight(entry.contentRect.height);
+      }
+    });
+
+    resizeObserver.observe(containerRef.current);
+
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, [activeTab, pdfMode]); // Re-measure when tab or mode changes
 
   const handleDocumentLoadSuccess = ({ numPages }: { numPages: number }) => {
     setNumPages(numPages);
@@ -41,16 +157,56 @@ export const ReaderOverlay: React.FC<ReaderOverlayProps> = ({ card, onClose, pdf
     });
   };
 
-  // TXT Highlighting logic
-  const renderHighlightedText = () => {
+  // TXT Paragraph rendering with high-quality styling
+  const renderFormattedText = () => {
     if (!card.txtContent) return null;
-    if (!searchQuery) return card.txtContent;
+    
+    const paragraphs = card.txtContent.split(/\r?\n/);
+    
+    return paragraphs.map((para, pIndex) => {
+      if (!para.trim()) {
+        return <div key={pIndex} className="h-4" />;
+      }
 
-    const parts = card.txtContent.split(new RegExp(`(${searchQuery})`, 'gi'));
-    return parts.map((part, index) => 
-      part.toLowerCase() === searchQuery.toLowerCase() ? 
-        <mark key={index} className="bg-yellow-300 text-black px-1 rounded">{part}</mark> : part
-    );
+      let content: React.ReactNode = para;
+      if (searchQuery) {
+        const parts = para.split(new RegExp(`(${searchQuery})`, 'gi'));
+        content = parts.map((part, index) => 
+          part.toLowerCase() === searchQuery.toLowerCase() ? 
+            <mark key={index} className="bg-yellow-300 text-black px-1 rounded">{part}</mark> : part
+        );
+      }
+
+      return (
+        <p 
+          key={pIndex} 
+          className="mb-6 text-[22px] md:text-[24px] text-right font-arabic"
+          style={{ 
+            fontFamily: "'Noto Naskh Arabic', serif", 
+            direction: 'rtl',
+            lineHeight: 2.2
+          }}
+        >
+          {content}
+        </p>
+      );
+    });
+  };
+
+  // Calculate dynamic responsive page width
+  const padding = containerWidth >= 768 ? 64 : 32;
+  const maxAvailableWidth = containerWidth ? Math.max(280, containerWidth - padding) : 320;
+  const maxAvailableHeight = containerHeight ? Math.max(300, containerHeight - padding) : 400;
+
+  // In vertical mode, fit to width. In horizontal mode, fit to both (contain)
+  const pageWidth = pdfMode === 'vertical'
+    ? maxAvailableWidth
+    : Math.min(maxAvailableWidth, maxAvailableHeight / aspectRatio);
+
+  const handleBookPageLoadSuccess = (page: any) => {
+    if (page && page.width && page.height) {
+      setAspectRatio(page.height / page.width);
+    }
   };
 
   return (
@@ -60,6 +216,8 @@ export const ReaderOverlay: React.FC<ReaderOverlayProps> = ({ card, onClose, pdf
         style={{ animation: 'slideInRight 0.4s ease-out forwards' }}
       >
         <style>{`
+          @import url('https://fonts.googleapis.com/css2?family=Noto+Naskh+Arabic:wght@400;500;600;700&display=swap');
+          
           @keyframes slideInRight {
             from { transform: translateX(100%); }
             to { transform: translateX(0); }
@@ -133,14 +291,26 @@ export const ReaderOverlay: React.FC<ReaderOverlayProps> = ({ card, onClose, pdf
                     </div>
 
                     <div className="flex items-center gap-3">
-                      <button onClick={() => setPdfScale(s => Math.max(0.5, s - 0.2))} className="p-1.5 rounded bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold">-</button>
+                      {pdfScale !== 1 && (
+                        <button 
+                          onClick={() => setPdfScale(1)} 
+                          className="px-2 py-1 text-xs bg-theme-lightest hover:bg-gray-200 text-theme-darkest border border-gray-300 rounded font-bold transition-all shadow-sm shrink-0"
+                        >
+                          Fit Layar
+                        </button>
+                      )}
+                      <button onClick={() => setPdfScale(s => Math.max(0.5, s - 0.2))} className="p-1.5 rounded bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold w-8 h-8 flex items-center justify-center shrink-0">-</button>
                       <span className="text-xs font-bold text-gray-600 w-12 text-center">{Math.round(pdfScale * 100)}%</span>
-                      <button onClick={() => setPdfScale(s => Math.min(3, s + 0.2))} className="p-1.5 rounded bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold">+</button>
+                      <button onClick={() => setPdfScale(s => Math.min(3, s + 0.2))} className="p-1.5 rounded bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold w-8 h-8 flex items-center justify-center shrink-0">+</button>
                     </div>
                   </div>
 
                   {/* PDF Reader Container */}
-                  <div className={`flex-1 overflow-auto p-4 md:p-8 flex ${pdfMode === 'vertical' ? 'flex-col items-center' : 'justify-center items-center'} gap-6`}>
+                  <div 
+                    ref={containerRef}
+                    className={`flex-1 overflow-auto p-4 md:p-8 flex ${pdfMode === 'vertical' ? 'flex-col items-center' : 'justify-center items-center'} gap-6`}
+                    style={{ scrollBehavior: 'smooth', WebkitOverflowScrolling: 'touch' }}
+                  >
                     <Document
                       file={card.pdfFile}
                       onLoadSuccess={handleDocumentLoadSuccess}
@@ -149,48 +319,52 @@ export const ReaderOverlay: React.FC<ReaderOverlayProps> = ({ card, onClose, pdf
                     >
                       {pdfMode === 'vertical' ? (
                         Array.from(new Array(numPages), (el, index) => (
-                          <div key={`page_${index + 1}`} className="shadow-2xl ring-1 ring-gray-900/5 bg-white mb-8">
-                            <Page 
-                              pageNumber={index + 1} 
-                              scale={pdfScale}
-                              renderTextLayer={true}
-                              renderAnnotationLayer={true}
-                              className="max-w-full"
-                            />
-                          </div>
-                        ))
-                      ) : (
-                        <div className="relative shadow-2xl ring-1 ring-gray-900/5 bg-white transition-all overflow-hidden">
-                           <Page 
-                            pageNumber={pageNumber} 
-                            scale={pdfScale * 1.2} // Slightly larger for book mode
+                          <LazyPDFPage 
+                            key={`page_${index + 1}`}
+                            pageNumber={index + 1}
+                            width={pageWidth * pdfScale}
                             renderTextLayer={true}
                             renderAnnotationLayer={true}
+                          />
+                        ))
+                      ) : (
+                        <div className="relative shadow-2xl ring-1 ring-gray-900/5 bg-white transition-all overflow-hidden shrink-0">
+                           <Page 
+                            pageNumber={pageNumber} 
+                            width={pageWidth * pdfScale}
+                            renderTextLayer={true}
+                            renderAnnotationLayer={true}
+                            onLoadSuccess={handleBookPageLoadSuccess}
                           />
                         </div>
                       )}
                     </Document>
                   </div>
 
-                  {/* Horizontal Pagination Controls */}
+                  {/* Horizontal Pagination Controls (RTL Kitab Arab Style) */}
                   {pdfMode === 'horizontal' && numPages > 0 && (
-                    <div className="bg-white/80 backdrop-blur-sm border-t border-gray-200 p-4 flex justify-between items-center absolute bottom-0 left-0 right-0 z-20">
-                      <button 
-                        onClick={() => changePage(-1)} 
-                        disabled={pageNumber <= 1}
-                        className="flex items-center gap-2 bg-theme-darkest text-white px-5 py-2.5 rounded-xl disabled:opacity-50 hover:bg-theme-mid transition-all shadow-lg"
-                      >
-                        <ChevronLeft size={20} /> Sebelumnya
-                      </button>
-                      <span className="font-bold text-gray-700 bg-gray-100 px-4 py-2 rounded-lg">
-                        Halaman {pageNumber} dari {numPages}
-                      </span>
+                    <div className="bg-white border-t border-gray-200 p-4 flex justify-between items-center z-20 shrink-0 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
+                      {/* Sisi Kiri: Tombol Selanjutnya (Halaman bertambah, melangkah ke kiri) */}
                       <button 
                         onClick={() => changePage(1)} 
                         disabled={pageNumber >= numPages}
-                        className="flex items-center gap-2 bg-theme-darkest text-white px-5 py-2.5 rounded-xl disabled:opacity-50 hover:bg-theme-mid transition-all shadow-lg"
+                        className="flex items-center gap-2 bg-theme-darkest text-white px-5 py-2.5 rounded-xl disabled:opacity-50 hover:bg-theme-mid transition-all shadow-md font-medium"
                       >
-                        Selanjutnya <ChevronRight size={20} />
+                        <ChevronLeft size={20} /> Selanjutnya
+                      </button>
+
+                      {/* Tengah: Indikator Halaman */}
+                      <span className="font-bold text-gray-700 bg-gray-100 px-4 py-2 rounded-lg text-sm border border-gray-200">
+                        Halaman {pageNumber} dari {numPages}
+                      </span>
+
+                      {/* Sisi Kanan: Tombol Sebelumnya (Halaman berkurang, mundur ke kanan) */}
+                      <button 
+                        onClick={() => changePage(-1)} 
+                        disabled={pageNumber <= 1}
+                        className="flex items-center gap-2 bg-theme-darkest text-white px-5 py-2.5 rounded-xl disabled:opacity-50 hover:bg-theme-mid transition-all shadow-md font-medium"
+                      >
+                        Sebelumnya <ChevronRight size={20} />
                       </button>
                     </div>
                   )}
@@ -201,9 +375,9 @@ export const ReaderOverlay: React.FC<ReaderOverlayProps> = ({ card, onClose, pdf
 
           {/* TXT VIEW */}
           {activeTab === 'txt' && (
-            <div className="flex-1 flex flex-col overflow-hidden relative bg-[#FAF9F6]">
+            <div className="flex-1 flex flex-col overflow-hidden relative transition-colors duration-300">
                {!card.txtContent ? (
-                 <div className="flex-1 flex flex-col items-center justify-center p-10 text-center">
+                 <div className="flex-1 flex flex-col items-center justify-center p-10 text-center bg-[#FAF9F6]">
                   <div className="w-20 h-20 bg-gray-200 rounded-full flex items-center justify-center text-gray-400 mb-6">
                     <FileText size={40} />
                   </div>
@@ -212,30 +386,80 @@ export const ReaderOverlay: React.FC<ReaderOverlayProps> = ({ card, onClose, pdf
                 </div>
                ) : (
                  <>
-                  {/* Search Bar */}
-                  <div className="bg-white border-b border-gray-200 p-3 md:p-4 shrink-0 shadow-sm flex items-center justify-between gap-4 z-10 sticky top-0">
-                    <h3 className="font-bold text-gray-700 hidden md:block">Mode Membaca Teks</h3>
-                    <div className="relative flex-1 max-w-md">
-                      <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                      <input 
-                        type="text" 
-                        placeholder="Cari kata di dalam teks..." 
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        className="w-full bg-gray-100 border-none rounded-full py-2.5 pl-10 pr-4 text-sm focus:ring-2 focus:ring-theme-mid focus:bg-white transition-all outline-none"
-                      />
-                      {searchQuery && (
-                        <button onClick={() => setSearchQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
-                          <X size={14}/>
-                        </button>
-                      )}
+                  {/* Search & Toolbar Bar */}
+                  <div 
+                    className="border-b transition-colors duration-300 p-3 md:p-4 shrink-0 shadow-sm flex items-center justify-between gap-4 z-10 sticky top-0"
+                    style={{ 
+                      backgroundColor: textMode === 'light' ? '#EFEBE2' : '#252525', 
+                      borderColor: textMode === 'light' ? '#E0DACF' : '#333333' 
+                    }}
+                  >
+                    <h3 
+                      className="font-bold hidden md:block transition-colors duration-300 text-sm md:text-base"
+                      style={{ color: textMode === 'light' ? '#2C1810' : '#F5F0E8' }}
+                    >
+                      Mode Membaca Teks Arab
+                    </h3>
+                    
+                    <div className="flex items-center gap-3 flex-1 max-w-md md:ml-auto">
+                      <div className="relative flex-1">
+                        <Search 
+                          size={18} 
+                          className="absolute left-3 top-1/2 -translate-y-1/2 transition-colors duration-300" 
+                          style={{ color: textMode === 'light' ? '#8B7E74' : '#888888' }}
+                        />
+                        <input 
+                          type="text" 
+                          placeholder="Cari kata di dalam teks..." 
+                          value={searchQuery}
+                          onChange={(e) => setSearchQuery(e.target.value)}
+                          className="w-full rounded-full py-2.5 pl-10 pr-4 text-sm transition-all outline-none border-none shadow-inner"
+                          style={{ 
+                            backgroundColor: textMode === 'light' ? '#FAF8F5' : '#1C1C1C', 
+                            color: textMode === 'light' ? '#2C1810' : '#F5F0E8' 
+                          }}
+                        />
+                        {searchQuery && (
+                          <button 
+                            onClick={() => setSearchQuery('')} 
+                            className="absolute right-3 top-1/2 -translate-y-1/2 hover:opacity-80"
+                            style={{ color: textMode === 'light' ? '#2C1810' : '#F5F0E8' }}
+                          >
+                            <X size={14}/>
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Theme Toggle Button */}
+                      <button
+                        onClick={() => setTextMode(m => m === 'light' ? 'dark' : 'light')}
+                        className="p-2.5 rounded-full transition-all duration-300 shadow-sm border flex items-center justify-center cursor-pointer hover:scale-105 active:scale-95 shrink-0"
+                        style={{
+                          backgroundColor: textMode === 'light' ? '#FAF8F5' : '#1C1C1C',
+                          borderColor: textMode === 'light' ? '#E0DACF' : '#333333',
+                          color: textMode === 'light' ? '#876445' : '#EEC373',
+                        }}
+                        title={textMode === 'light' ? 'Aktifkan Mode Gelap' : 'Aktifkan Mode Terang'}
+                      >
+                        {textMode === 'light' ? <Moon size={18} /> : <Sun size={18} />}
+                      </button>
                     </div>
                   </div>
                   
                   {/* Text Content Container */}
-                  <div className="flex-1 overflow-y-auto w-full flex justify-center p-4 md:p-10">
-                    <div className="w-full max-w-3xl bg-white shadow-xl ring-1 ring-gray-900/5 rounded-2xl p-6 md:p-12 mb-20 text-gray-800 text-lg leading-relaxed whitespace-pre-wrap font-serif">
-                       {renderHighlightedText()}
+                  <div 
+                    className="flex-1 overflow-y-auto w-full flex justify-center p-4 md:p-10 transition-colors duration-300"
+                    style={{ 
+                      backgroundColor: textMode === 'light' ? '#F5F0E8' : '#1C1C1C'
+                    }}
+                  >
+                    <div 
+                      className="w-full max-w-[800px] px-6 md:px-8 mb-20 transition-colors duration-300"
+                      style={{ 
+                        color: textMode === 'light' ? '#2C1810' : '#F5F0E8' 
+                      }}
+                    >
+                       {renderFormattedText()}
                     </div>
                   </div>
                  </>
