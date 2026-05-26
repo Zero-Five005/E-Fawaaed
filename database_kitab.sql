@@ -3,6 +3,7 @@
 -- 1. Create tables with UUID primary keys and urutan column for custom sorting
 CREATE TABLE kitab (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  card_id UUID REFERENCES cards(id) ON DELETE CASCADE, -- Hubungan ke kartu Muroja'ah
   nama VARCHAR(255) NOT NULL,
   urutan INT DEFAULT 0,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()

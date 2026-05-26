@@ -1,6 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ChevronDown, BookOpen, Search, Copy, Check, Sun, Moon, Type, RefreshCw, Book } from 'lucide-react';
+import { ChevronDown, Search, Copy, Check, Sun, Moon, Type, RefreshCw, Book, FileText, AlertCircle } from 'lucide-react';
 import { kitabStore, Kitab, Bab, SubBab } from '../lib/kitabStore';
+
+// Props to handle card-level nested accordion or fallback text rendering
+interface KitabReaderProps {
+  cardId?: string;
+  fallbackText?: string;
+}
 
 // Dynamic height animator for smooth nested accordions
 const SmoothCollapse: React.FC<{
@@ -46,12 +52,13 @@ const SmoothCollapse: React.FC<{
   );
 };
 
-export const KitabReader: React.FC = () => {
+export const KitabReader: React.FC<KitabReaderProps> = ({ cardId, fallbackText }) => {
+  const [kitab, setKitab] = useState<Kitab | null>(null);
   const [kitabList, setKitabList] = useState<Kitab[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [searchQuery, setSearchQuery] = useState<string>('');
   
-  // Accordion state (allows multiple open for comparison)
+  // Accordion state
   const [openKitabIds, setOpenKitabIds] = useState<string[]>([]);
   const [openBabIds, setOpenBabIds] = useState<string[]>([]);
   const [openSubBabIds, setOpenSubBabIds] = useState<string[]>([]);
@@ -70,14 +77,21 @@ export const KitabReader: React.FC = () => {
 
   const loadData = async () => {
     setLoading(true);
-    const data = await kitabStore.getAll();
-    setKitabList(data);
+    if (cardId) {
+      // Fetch specific Kitab mapped to this Muroja'ah Card
+      const data = await kitabStore.getByCardId(cardId);
+      setKitab(data);
+    } else {
+      // General viewer (if opened standalone)
+      const data = await kitabStore.getAll();
+      setKitabList(data);
+    }
     setLoading(false);
   };
 
   useEffect(() => {
     loadData();
-  }, []);
+  }, [cardId]);
 
   useEffect(() => {
     localStorage.setItem('efawaaed_text_reader_theme', textMode);
@@ -108,14 +122,10 @@ export const KitabReader: React.FC = () => {
   // Expand all matched levels during search
   useEffect(() => {
     if (searchQuery.trim().length > 1) {
-      const kitabsToOpen: string[] = [];
       const babsToOpen: string[] = [];
       const subBabsToOpen: string[] = [];
 
-      kitabList.forEach(kitab => {
-        let kitabMatch = kitab.nama.toLowerCase().includes(searchQuery.toLowerCase());
-        let kitabHasBabMatch = false;
-
+      if (kitab) {
         kitab.bab.forEach(bab => {
           let babMatch = bab.nama.toLowerCase().includes(searchQuery.toLowerCase());
           let babHasSubMatch = false;
@@ -131,302 +141,415 @@ export const KitabReader: React.FC = () => {
 
           if (babMatch || babHasSubMatch) {
             babsToOpen.push(bab.id);
-            kitabHasBabMatch = true;
           }
         });
+      } else {
+        const kitabsToOpen: string[] = [];
+        kitabList.forEach(k => {
+          let kMatch = k.nama.toLowerCase().includes(searchQuery.toLowerCase());
+          let kHasBabMatch = false;
 
-        if (kitabMatch || kitabHasBabMatch) {
-          kitabsToOpen.push(kitab.id);
-        }
-      });
+          k.bab.forEach(bab => {
+            let babMatch = bab.nama.toLowerCase().includes(searchQuery.toLowerCase());
+            let babHasSubMatch = false;
 
-      setOpenKitabIds(kitabsToOpen);
+            bab.sub_bab.forEach(sb => {
+              let sbMatch = sb.nama.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                            sb.isi_teks.toLowerCase().includes(searchQuery.toLowerCase());
+              if (sbMatch) {
+                subBabsToOpen.push(sb.id);
+                babHasSubMatch = true;
+              }
+            });
+
+            if (babMatch || babHasSubMatch) {
+              babsToOpen.push(bab.id);
+              kHasBabMatch = true;
+            }
+          });
+
+          if (kMatch || kHasBabMatch) {
+            kitabsToOpen.push(k.id);
+          }
+        });
+        setOpenKitabIds(kitabsToOpen);
+      }
+
       setOpenBabIds(babsToOpen);
       if (subBabsToOpen.length > 0) {
         setOpenSubBabIds(subBabsToOpen);
       }
     }
-  }, [searchQuery, kitabList]);
+  }, [searchQuery, kitab, kitabList]);
 
-  // Deep search/filtering
-  const filteredKitabs = kitabList.map(kitab => {
-    if (!searchQuery.trim()) return kitab;
+  // Deep search/filtering for general list
+  const filteredKitabs = kitabList.map(k => {
+    if (!searchQuery.trim()) return k;
 
-    const matchingBabs = kitab.bab.map(bab => {
+    const matchingBabs = k.bab.map(bab => {
       const matchingSubBabs = bab.sub_bab.filter(sb => 
         sb.nama.toLowerCase().includes(searchQuery.toLowerCase()) ||
         sb.isi_teks.toLowerCase().includes(searchQuery.toLowerCase())
       );
-      
       const babMatches = bab.nama.toLowerCase().includes(searchQuery.toLowerCase());
       
       if (babMatches || matchingSubBabs.length > 0) {
-        return {
-          ...bab,
-          sub_bab: babMatches ? bab.sub_bab : matchingSubBabs
-        };
+        return { ...bab, sub_bab: babMatches ? bab.sub_bab : matchingSubBabs };
       }
       return null;
     }).filter(Boolean) as Bab[];
 
-    const kitabMatches = kitab.nama.toLowerCase().includes(searchQuery.toLowerCase());
-
-    if (kitabMatches || matchingBabs.length > 0) {
-      return {
-        ...kitab,
-        bab: kitabMatches ? kitab.bab : matchingBabs
-      };
+    const kMatches = k.nama.toLowerCase().includes(searchQuery.toLowerCase());
+    if (kMatches || matchingBabs.length > 0) {
+      return { ...k, bab: kMatches ? k.bab : matchingBabs };
     }
     return null;
   }).filter(Boolean) as Kitab[];
 
-  return (
-    <div className="space-y-6">
-      {/* Reader Controls Panel */}
-      <div className="flex flex-col md:flex-row gap-4 items-center justify-between bg-white/60 backdrop-blur-md p-4 rounded-2xl border border-theme-light-mid/30 shadow-sm">
-        {/* Search Input */}
-        <div className="relative w-full md:max-w-md">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-theme-mid w-4 h-4" />
-          <input
-            type="text"
-            placeholder="Cari nama kitab, bab, sub-bab, atau isi teks..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-11 pr-10 py-2.5 bg-white border border-theme-light-mid/30 rounded-xl focus:outline-none focus:border-theme-mid transition-all text-sm text-theme-darkest placeholder-theme-mid/60 shadow-inner"
-          />
-          {searchQuery && (
-            <button 
-              onClick={() => setSearchQuery('')}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-theme-mid hover:text-theme-darkest text-xs font-bold bg-theme-light-mid/20 hover:bg-theme-light-mid/40 px-1.5 py-0.5 rounded"
-            >
-              Clear
-            </button>
-          )}
-        </div>
+  // Filtering for specific single kitab
+  const filteredBab = kitab ? kitab.bab.map(bab => {
+    if (!searchQuery.trim()) return bab;
+    
+    const matchingSubBabs = bab.sub_bab.filter(sb => 
+      sb.nama.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      sb.isi_teks.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+    const babMatches = bab.nama.toLowerCase().includes(searchQuery.toLowerCase());
+    
+    if (babMatches || matchingSubBabs.length > 0) {
+      return { ...bab, sub_bab: babMatches ? bab.sub_bab : matchingSubBabs };
+    }
+    return null;
+  }).filter(Boolean) as Bab[] : [];
 
-        {/* Font & Theme Customizer */}
-        <div className="flex items-center gap-3 w-full md:w-auto justify-end">
-          {/* Refresh Data */}
-          <button
-            onClick={loadData}
-            className="p-2.5 bg-white border border-theme-light-mid/30 rounded-xl text-theme-mid hover:text-theme-darkest hover:bg-theme-lightest/50 transition-colors shadow-sm"
-            title="Muat Ulang Data"
+  // Flat text highlighter (for fallback mode)
+  const renderFormattedFallbackText = (text: string) => {
+    if (!text) return null;
+    const paragraphs = text.split('\n');
+
+    return paragraphs.map((p, index) => {
+      if (!p.trim()) return <div key={index} className="h-4" />;
+      
+      // If there is a search query, highlight it
+      if (searchQuery.trim().length > 1) {
+        const regex = new RegExp(`(${searchQuery.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')})`, 'gi');
+        const parts = p.split(regex);
+        return (
+          <p 
+            key={index} 
+            className="mb-4"
+            style={{ wordBreak: 'break-word' }}
           >
-            <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
-          </button>
+            {parts.map((part, i) => 
+              regex.test(part) ? (
+                <mark key={i} className="bg-yellow-200 text-black px-1 rounded font-semibold">{part}</mark>
+              ) : part
+            )}
+          </p>
+        );
+      }
 
-          {/* Font Sizer */}
-          <div className="flex items-center bg-white border border-theme-light-mid/30 rounded-xl p-1 shadow-sm">
+      return (
+        <p 
+          key={index} 
+          className="mb-4"
+          style={{ wordBreak: 'break-word' }}
+        >
+          {p}
+        </p>
+      );
+    });
+  };
+
+  return (
+    <div className="flex-1 flex flex-col overflow-hidden h-full">
+      {/* 1. Header Toolbar (Always displayed) */}
+      <div 
+        className="border-b transition-colors duration-300 p-3 md:p-4 shrink-0 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4 z-10"
+        style={{ 
+          backgroundColor: textMode === 'light' ? '#EFEBE2' : '#252525', 
+          borderColor: textMode === 'light' ? '#E0DACF' : '#333333' 
+        }}
+      >
+        <h3 
+          className="font-bold text-xs md:text-sm tracking-wide select-none"
+          style={{ color: textMode === 'light' ? '#876445' : '#EEC373' }}
+        >
+          {kitab ? `Kitab: ${kitab.nama}` : 'Panel Baca Teks Arab'}
+        </h3>
+        
+        <div className="flex items-center gap-3 w-full md:w-auto justify-end">
+          {/* Search Bar */}
+          <div className="relative flex-1 max-w-xs md:max-w-md">
+            <Search 
+              size={14} 
+              className="absolute left-3 top-1/2 -translate-y-1/2 opacity-60" 
+              style={{ color: textMode === 'light' ? '#2C1810' : '#F5F0E8' }}
+            />
+            <input 
+              type="text" 
+              placeholder="Cari dalam teks..." 
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full rounded-full py-1.5 pl-9 pr-8 text-xs outline-none border shadow-inner"
+              style={{ 
+                backgroundColor: textMode === 'light' ? '#FAF8F5' : '#1C1C1C', 
+                color: textMode === 'light' ? '#2C1810' : '#F5F0E8',
+                borderColor: textMode === 'light' ? '#E0DACF' : '#333333'
+              }}
+            />
+            {searchQuery && (
+              <button 
+                onClick={() => setSearchQuery('')} 
+                className="absolute right-3 top-1/2 -translate-y-1/2 hover:opacity-80 text-[10px] font-bold"
+                style={{ color: textMode === 'light' ? '#2C1810' : '#F5F0E8' }}
+              >
+                Clear
+              </button>
+            )}
+          </div>
+
+          {/* Font controls */}
+          <div 
+            className="flex items-center border rounded-xl p-0.5"
+            style={{ 
+              borderColor: textMode === 'light' ? '#E0DACF' : '#333333',
+              backgroundColor: textMode === 'light' ? '#FAF8F5' : '#1C1C1C' 
+            }}
+          >
             <button 
               onClick={() => setFontSize(s => Math.max(14, s - 2))} 
-              className="px-2.5 py-1 text-xs font-bold text-theme-mid hover:text-theme-darkest rounded hover:bg-theme-lightest/50 transition-colors"
-              title="Perkecil Ukuran Huruf"
+              className="px-2 py-0.5 text-[10px] font-bold cursor-pointer hover:opacity-80"
+              style={{ color: textMode === 'light' ? '#2C1810' : '#F5F0E8' }}
+              title="Perkecil Font"
             >
               A-
             </button>
-            <span className="px-2 text-xs font-bold text-theme-darkest flex items-center gap-1 min-w-[50px] justify-center">
-              <Type size={12} className="opacity-60" /> {fontSize}px
+            <span className="px-1.5 text-[10px] font-bold opacity-75 min-w-[32px] text-center" style={{ color: textMode === 'light' ? '#2C1810' : '#F5F0E8' }}>
+              {fontSize}px
             </span>
             <button 
               onClick={() => setFontSize(s => Math.min(36, s + 2))} 
-              className="px-2.5 py-1 text-xs font-bold text-theme-mid hover:text-theme-darkest rounded hover:bg-theme-lightest/50 transition-colors"
-              title="Perbesar Ukuran Huruf"
+              className="px-2 py-0.5 text-[10px] font-bold cursor-pointer hover:opacity-80"
+              style={{ color: textMode === 'light' ? '#2C1810' : '#F5F0E8' }}
+              title="Perbesar Font"
             >
               A+
             </button>
           </div>
 
-          {/* Specialized Theme Switcher */}
+          {/* Theme switch button */}
           <button
             onClick={() => setTextMode(m => m === 'light' ? 'dark' : 'light')}
-            className="p-2.5 rounded-xl transition-all border flex items-center justify-center cursor-pointer shadow-sm hover:scale-105 active:scale-95"
+            className="p-2 rounded-xl transition-all border flex items-center justify-center cursor-pointer hover:scale-105 active:scale-95"
             style={{
-              backgroundColor: textMode === 'light' ? '#F5F0E8' : '#1C1C1C',
+              backgroundColor: textMode === 'light' ? '#FAF8F5' : '#1C1C1C',
               borderColor: textMode === 'light' ? '#E0DACF' : '#333333',
               color: textMode === 'light' ? '#876445' : '#EEC373',
             }}
-            title={textMode === 'light' ? 'Mode Gelap Teks' : 'Mode Terang Teks'}
+            title={textMode === 'light' ? 'Aktifkan Mode Gelap' : 'Aktifkan Mode Terang'}
           >
-            {textMode === 'light' ? <Moon size={16} /> : <Sun size={16} />}
+            {textMode === 'light' ? <Moon size={14} /> : <Sun size={14} />}
           </button>
         </div>
       </div>
 
-      {/* Main Accordion Kitab Tree */}
-      {loading ? (
-        <div className="flex flex-col items-center justify-center py-20 gap-3 text-theme-mid">
-          <RefreshCw className="animate-spin w-8 h-8 text-theme-mid" />
-          <p className="text-sm font-semibold tracking-wider">Memuat Pustaka Kitab...</p>
-        </div>
-      ) : filteredKitabs.length > 0 ? (
-        <div className="space-y-4">
-          {filteredKitabs.map((kitab) => {
-            const isKitabOpen = openKitabIds.includes(kitab.id);
-            
-            return (
-              <div 
-                key={kitab.id} 
-                className="bg-white rounded-2xl shadow-md border border-theme-light-mid/20 overflow-hidden hover:border-theme-light-mid/40 transition-colors"
-              >
-                {/* LEVEL 1: NAMA KITAB (Book Name) */}
-                <button
-                  onClick={() => toggleKitab(kitab.id)}
-                  className={`w-full flex items-center justify-between p-5 md:p-6 text-left cursor-pointer transition-colors ${isKitabOpen ? 'bg-theme-darkest text-theme-lightest' : 'bg-white hover:bg-theme-lightest/30'}`}
-                >
-                  <div className="flex items-center gap-3">
-                    <div className={`p-2.5 rounded-xl ${isKitabOpen ? 'bg-theme-lightest/15 text-theme-lightest' : 'bg-theme-lightest text-theme-darkest'}`}>
-                      <BookOpen size={22} />
-                    </div>
-                    <div>
-                      <h3 className="font-bold text-base md:text-lg tracking-wide">{kitab.nama}</h3>
-                      <p className={`text-xs ${isKitabOpen ? 'text-theme-light-mid/80' : 'text-theme-mid'}`}>{kitab.bab.length} Bab Terdaftar</p>
-                    </div>
-                  </div>
-                  <ChevronDown 
-                    className={`transition-transform duration-300 ${isKitabOpen ? 'rotate-180 text-theme-lightest' : 'text-theme-mid'}`} 
-                    size={20}
-                  />
-                </button>
-
-                {/* Kitab Collapse Body: Level 2 */}
-                <SmoothCollapse isOpen={isKitabOpen}>
-                  <div className="p-4 md:p-6 bg-theme-lightest/20 border-t border-theme-light-mid/10 space-y-3">
-                    {kitab.bab.length > 0 ? (
-                      kitab.bab.map((bab) => {
-                        const isBabOpen = openBabIds.includes(bab.id);
-                        
-                        return (
-                          <div 
-                            key={bab.id} 
-                            className="bg-white/80 backdrop-blur-sm rounded-xl border border-theme-light-mid/20 overflow-hidden shadow-sm hover:shadow transition-shadow"
-                          >
-                            {/* LEVEL 2: NAMA BAB (Chapter Name) */}
-                            <button
-                              onClick={() => toggleBab(bab.id)}
-                              className={`w-full flex items-center justify-between p-4 text-left cursor-pointer transition-all ${isBabOpen ? 'bg-theme-mid/10 border-b border-theme-light-mid/20' : 'hover:bg-theme-lightest/45'}`}
-                            >
-                              <div className="flex items-center gap-3">
-                                <div className="w-1.5 h-6 bg-theme-mid rounded-full"></div>
-                                <div>
-                                  <h4 className="font-bold text-sm md:text-base text-theme-darkest">{bab.nama}</h4>
-                                  <p className="text-[11px] text-theme-mid">{bab.sub_bab.length} Sub Bab</p>
-                                </div>
-                              </div>
-                              <ChevronDown 
-                                className={`text-theme-mid transition-transform duration-300 ${isBabOpen ? 'rotate-180' : ''}`} 
-                                size={16}
-                              />
-                            </button>
-
-                            {/* Bab Collapse Body: Level 3 */}
-                            <SmoothCollapse isOpen={isBabOpen}>
-                              <div className="p-3 bg-theme-lightest/10 space-y-2">
-                                {bab.sub_bab.length > 0 ? (
-                                  bab.sub_bab.map((subBab) => {
-                                    const isSubBabOpen = openSubBabIds.includes(subBab.id);
-                                    
-                                    return (
-                                      <div 
-                                        key={subBab.id} 
-                                        className="bg-white rounded-lg border border-theme-light-mid/15 overflow-hidden shadow-xs"
-                                      >
-                                        {/* LEVEL 3: NAMA SUB BAB (Sub Chapter) */}
-                                        <button
-                                          onClick={() => toggleSubBab(subBab.id)}
-                                          className={`w-full flex items-center justify-between p-3.5 text-left cursor-pointer transition-all ${isSubBabOpen ? 'bg-theme-light-mid/10 border-b border-theme-light-mid/10' : 'hover:bg-theme-lightest/30'}`}
-                                        >
-                                          <div className="flex items-center gap-2">
-                                            <Book size={14} className="text-theme-mid flex-shrink-0" />
-                                            <h5 className="font-semibold text-xs md:text-sm text-theme-darkest leading-snug">{subBab.nama}</h5>
-                                          </div>
-                                          <ChevronDown 
-                                            className={`text-theme-mid transition-transform duration-300 ${isSubBabOpen ? 'rotate-180' : ''}`} 
-                                            size={14}
-                                          />
-                                        </button>
-
-                                        {/* LEVEL 4: ISI TEKS ARAB (Arabic Text Content) */}
-                                        <SmoothCollapse isOpen={isSubBabOpen}>
-                                          <div 
-                                            className="transition-colors duration-300 flex flex-col p-4 md:p-6"
-                                            style={{ 
-                                              backgroundColor: textMode === 'light' ? '#F5F0E8' : '#1C1C1C'
-                                            }}
-                                          >
-                                            {/* Action bar for Copy & Feedback */}
-                                            <div 
-                                              className="flex justify-between items-center pb-3 mb-4 border-b text-xs select-none"
-                                              style={{ 
-                                                borderColor: textMode === 'light' ? 'rgba(135,100,69,0.15)' : 'rgba(255,255,255,0.08)',
-                                                color: textMode === 'light' ? '#876445' : '#EEC373'
-                                              }}
-                                            >
-                                              <span className="font-semibold tracking-wider opacity-60">Teks Arab (RTL)</span>
-                                              <button
-                                                onClick={() => handleCopyText(subBab.id, subBab.isi_teks)}
-                                                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-black/5 hover:bg-black/10 dark:bg-white/5 dark:hover:bg-white/10 rounded-md font-bold transition-all shadow-xs cursor-pointer select-none active:scale-95"
-                                              >
-                                                {copiedId === subBab.id ? (
-                                                  <>
-                                                    <Check size={12} className="text-green-500" />
-                                                    <span className="text-green-500">Tersalin</span>
-                                                  </>
-                                                ) : (
-                                                  <>
-                                                    <Copy size={12} />
-                                                    <span>Salin</span>
-                                                  </>
-                                                )}
-                                              </button>
-                                            </div>
-
-                                            {/* Arabic Text Display */}
-                                            <div 
-                                              className="w-full max-w-[800px] mx-auto select-text focus:outline-none transition-colors"
-                                              style={{ 
-                                                direction: 'rtl',
-                                                textAlign: 'right',
-                                                fontFamily: "'Noto Naskh Arabic', serif",
-                                                lineHeight: 2.0,
-                                                fontSize: `${fontSize}px`,
-                                                color: textMode === 'light' ? '#2C1810' : '#F5F0E8',
-                                                wordBreak: 'break-word',
-                                                whiteSpace: 'pre-wrap'
-                                              }}
-                                            >
-                                              {subBab.isi_teks ? subBab.isi_teks : (
-                                                <span className="italic opacity-40 text-sm font-sans tracking-normal">Belum ada isi teks Arab. Silahkan edit di Admin Panel.</span>
-                                              )}
-                                            </div>
-                                          </div>
-                                        </SmoothCollapse>
-                                      </div>
-                                    );
-                                  })
-                                ) : (
-                                  <div className="text-center py-4 text-xs opacity-50 font-medium">Belum ada sub bab.</div>
-                                )}
-                              </div>
-                            </SmoothCollapse>
+      {/* 2. Content Display Workspace */}
+      <div 
+        className="flex-1 overflow-y-auto p-4 md:p-6 transition-colors duration-300 w-full"
+        style={{ 
+          backgroundColor: textMode === 'light' ? '#F5F0E8' : '#1C1C1C'
+        }}
+      >
+        <div className="max-w-[800px] mx-auto mb-20">
+          {loading ? (
+            <div className="flex flex-col items-center justify-center py-20 gap-3">
+              <RefreshCw className="animate-spin w-8 h-8 text-theme-mid" />
+              <p className="text-xs font-semibold tracking-wider text-theme-mid">Menghubungkan Database...</p>
+            </div>
+          ) : (
+            // A. SCENARIO 1: Structured Accordion Mapped to CardId
+            kitab ? (
+              filteredBab.length > 0 ? (
+                <div className="space-y-3">
+                  {filteredBab.map((bab) => {
+                    const isBabOpen = openBabIds.includes(bab.id);
+                    
+                    return (
+                      <div 
+                        key={bab.id} 
+                        className="rounded-xl border overflow-hidden shadow-xs transition-colors duration-300"
+                        style={{
+                          backgroundColor: textMode === 'light' ? '#FAF8F5' : '#222222',
+                          borderColor: textMode === 'light' ? '#E3DCDE' : '#333333'
+                        }}
+                      >
+                        {/* LEVEL 2: NAMA BAB (Rendered directly as Accordion Header) */}
+                        <button
+                          onClick={() => toggleBab(bab.id)}
+                          className="w-full flex items-center justify-between p-4 text-left cursor-pointer transition-colors duration-300"
+                          style={{
+                            color: textMode === 'light' ? '#2C1810' : '#F5F0E8'
+                          }}
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className="w-1.5 h-6 bg-theme-mid rounded-full"></div>
+                            <div>
+                              <h4 className="font-bold text-sm md:text-base leading-snug">{bab.nama}</h4>
+                              <p className="text-[10px] opacity-60 mt-0.5">{bab.sub_bab.length} Sub-bab terstruktur</p>
+                            </div>
                           </div>
-                        );
-                      })
-                    ) : (
-                      <div className="text-center py-8 text-sm opacity-50 font-medium">Belum ada bab untuk kitab ini.</div>
-                    )}
-                  </div>
-                </SmoothCollapse>
+                          <ChevronDown 
+                            className={`transition-transform duration-300 ${isBabOpen ? 'rotate-180' : ''}`} 
+                            size={16}
+                          />
+                        </button>
+
+                        {/* LEVEL 3 COLLAPSE: Sub Bab List */}
+                        <SmoothCollapse isOpen={isBabOpen}>
+                          <div className="p-3 space-y-2 bg-black/5 dark:bg-white/5 border-t border-theme-light-mid/10">
+                            {bab.sub_bab.length > 0 ? (
+                              bab.sub_bab.map((subBab) => {
+                                const isSubBabOpen = openSubBabIds.includes(subBab.id);
+                                
+                                return (
+                                  <div 
+                                    key={subBab.id} 
+                                    className="rounded-lg border overflow-hidden transition-colors"
+                                    style={{
+                                      backgroundColor: textMode === 'light' ? '#FAF8F5' : '#262626',
+                                      borderColor: textMode === 'light' ? 'rgba(135,100,69,0.1)' : '#3C3C3C'
+                                    }}
+                                  >
+                                    {/* LEVEL 3: NAMA SUB BAB */}
+                                    <button
+                                      onClick={() => toggleSubBab(subBab.id)}
+                                      className="w-full flex items-center justify-between p-3 text-left cursor-pointer"
+                                      style={{
+                                        color: textMode === 'light' ? '#2C1810' : '#F5F0E8'
+                                      }}
+                                    >
+                                      <div className="flex items-center gap-2">
+                                        <Book size={13} className="opacity-60 flex-shrink-0" />
+                                        <h5 className="font-bold text-xs md:text-sm leading-snug">{subBab.nama}</h5>
+                                      </div>
+                                      <ChevronDown 
+                                        className={`transition-transform duration-300 ${isSubBabOpen ? 'rotate-180' : ''}`} 
+                                        size={14}
+                                      />
+                                    </button>
+
+                                    {/* LEVEL 4 COLLAPSE: Arabic Text display */}
+                                    <SmoothCollapse isOpen={isSubBabOpen}>
+                                      <div 
+                                        className="p-4 md:p-5 border-t flex flex-col"
+                                        style={{ 
+                                          backgroundColor: textMode === 'light' ? '#F5F0E8' : '#1C1C1C',
+                                          borderColor: textMode === 'light' ? 'rgba(135,100,69,0.15)' : '#333333'
+                                        }}
+                                      >
+                                        {/* Copy Text & Actions */}
+                                        <div 
+                                          className="flex justify-between items-center pb-2.5 mb-3 border-b text-[10px]"
+                                          style={{ 
+                                            borderColor: textMode === 'light' ? 'rgba(135,100,69,0.15)' : 'rgba(255,255,255,0.06)',
+                                            color: textMode === 'light' ? '#876445' : '#EEC373'
+                                          }}
+                                        >
+                                          <span className="font-semibold tracking-wider opacity-60">Teks Arab (RTL)</span>
+                                          <button
+                                            onClick={() => handleCopyText(subBab.id, subBab.isi_teks)}
+                                            className="inline-flex items-center gap-1 px-2.5 py-1 bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 rounded-md font-bold transition-all shadow-xs cursor-pointer select-none active:scale-95 border border-transparent hover:border-theme-light-mid/20"
+                                          >
+                                            {copiedId === subBab.id ? (
+                                              <>
+                                                <Check size={11} className="text-green-500" />
+                                                <span className="text-green-500">Tersalin</span>
+                                              </>
+                                            ) : (
+                                              <>
+                                                <Copy size={11} />
+                                                <span>Salin Teks</span>
+                                              </>
+                                            )}
+                                          </button>
+                                        </div>
+
+                                        {/* Content displaying with Noto Naskh Arabic */}
+                                        <div 
+                                          className="w-full select-text focus:outline-none transition-colors"
+                                          style={{ 
+                                            direction: 'rtl',
+                                            textAlign: 'right',
+                                            fontFamily: "'Noto Naskh Arabic', serif",
+                                            lineHeight: 2.0,
+                                            fontSize: `${fontSize}px`,
+                                            color: textMode === 'light' ? '#2C1810' : '#F5F0E8',
+                                            wordBreak: 'break-word',
+                                            whiteSpace: 'pre-wrap'
+                                          }}
+                                        >
+                                          {subBab.isi_teks ? subBab.isi_teks : (
+                                            <span className="italic opacity-35 text-xs font-sans tracking-normal">Belum ada isi teks Arab.</span>
+                                          )}
+                                        </div>
+                                      </div>
+                                    </SmoothCollapse>
+                                  </div>
+                                );
+                              })
+                            ) : (
+                              <div className="text-center py-3 text-xs opacity-50 font-medium">Belum ada sub-bab.</div>
+                            )}
+                          </div>
+                        </SmoothCollapse>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="text-center py-12 opacity-50">
+                  <AlertCircle className="w-10 h-10 mx-auto mb-2" />
+                  <p className="text-xs">Hasil pencarian tidak ditemukan di kitab ini.</p>
+                </div>
+              )
+            ) : 
+            
+            // B. SCENARIO 2: Fallback Flat Text (.txt) reader
+            fallbackText ? (
+              <div 
+                className="w-full select-text transition-colors duration-300"
+                style={{ 
+                  direction: 'rtl',
+                  textAlign: 'right',
+                  fontFamily: "'Noto Naskh Arabic', serif",
+                  lineHeight: 2.0,
+                  fontSize: `${fontSize}px`,
+                  color: textMode === 'light' ? '#2C1810' : '#F5F0E8'
+                }}
+              >
+                {renderFormattedFallbackText(fallbackText)}
               </div>
-            );
-          })}
+            ) : (
+              
+              // C. SCENARIO 3: Empty State (No Kitab Structure and No Fallback Text)
+              <div 
+                className="text-center py-16 rounded-2xl border-2 border-dashed flex flex-col items-center justify-center gap-3 select-none"
+                style={{
+                  borderColor: textMode === 'light' ? 'rgba(135,100,69,0.2)' : '#333333',
+                  color: textMode === 'light' ? '#876445' : '#888888'
+                }}
+              >
+                <FileText className="w-12 h-12 opacity-40" />
+                <h4 className="font-bold text-sm" style={{ color: textMode === 'light' ? '#2C1810' : '#F5F0E8' }}>Belum Ada Materi Teks</h4>
+                <p className="text-xs max-w-xs leading-relaxed opacity-75">
+                  Afwan, modul pembelajaran ini belum dilengkapi versi teks Arab ataupun struktur Kitab Kuning. Admin dapat menambahkannya via Admin Panel.
+                </p>
+              </div>
+            )
+          )}
         </div>
-      ) : (
-        <div className="bg-white/50 border border-dashed border-theme-light-mid/30 rounded-2xl py-12 text-center text-theme-mid shadow-inner">
-          <BookOpen className="w-12 h-12 mx-auto opacity-30 mb-3" />
-          <p className="font-semibold text-sm">Tidak ada hasil pencarian yang cocok.</p>
-          <p className="text-xs opacity-75 mt-1">Coba gunakan kata kunci pencarian yang lain.</p>
-        </div>
-      )}
+      </div>
     </div>
   );
 };

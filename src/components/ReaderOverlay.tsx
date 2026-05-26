@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { X, BookOpen, FileText, ChevronLeft, ChevronRight, Search, Sun, Moon } from 'lucide-react';
 import { CardItem } from '../lib/store';
+import { KitabReader } from './KitabReader';
 import { Document, Page, pdfjs } from 'react-pdf';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 import 'react-pdf/dist/Page/TextLayer.css';
@@ -375,95 +376,8 @@ export const ReaderOverlay: React.FC<ReaderOverlayProps> = ({ card, onClose, pdf
 
           {/* TXT VIEW */}
           {activeTab === 'txt' && (
-            <div className="flex-1 flex flex-col overflow-hidden relative transition-colors duration-300">
-               {!card.txtContent ? (
-                 <div className="flex-1 flex flex-col items-center justify-center p-10 text-center bg-[#FAF9F6]">
-                  <div className="w-20 h-20 bg-gray-200 rounded-full flex items-center justify-center text-gray-400 mb-6">
-                    <FileText size={40} />
-                  </div>
-                  <h3 className="text-2xl font-bold text-gray-700 mb-2">Belum Tersedia</h3>
-                  <p className="text-gray-500 max-w-md">Afwan, file teks untuk materi ini belum ditambahkan oleh Admin.</p>
-                </div>
-               ) : (
-                 <>
-                  {/* Search & Toolbar Bar */}
-                  <div 
-                    className="border-b transition-colors duration-300 p-3 md:p-4 shrink-0 shadow-sm flex items-center justify-between gap-4 z-10 sticky top-0"
-                    style={{ 
-                      backgroundColor: textMode === 'light' ? '#EFEBE2' : '#252525', 
-                      borderColor: textMode === 'light' ? '#E0DACF' : '#333333' 
-                    }}
-                  >
-                    <h3 
-                      className="font-bold hidden md:block transition-colors duration-300 text-sm md:text-base"
-                      style={{ color: textMode === 'light' ? '#2C1810' : '#F5F0E8' }}
-                    >
-                      Mode Membaca Teks Arab
-                    </h3>
-                    
-                    <div className="flex items-center gap-3 flex-1 max-w-md md:ml-auto">
-                      <div className="relative flex-1">
-                        <Search 
-                          size={18} 
-                          className="absolute left-3 top-1/2 -translate-y-1/2 transition-colors duration-300" 
-                          style={{ color: textMode === 'light' ? '#8B7E74' : '#888888' }}
-                        />
-                        <input 
-                          type="text" 
-                          placeholder="Cari kata di dalam teks..." 
-                          value={searchQuery}
-                          onChange={(e) => setSearchQuery(e.target.value)}
-                          className="w-full rounded-full py-2.5 pl-10 pr-4 text-sm transition-all outline-none border-none shadow-inner"
-                          style={{ 
-                            backgroundColor: textMode === 'light' ? '#FAF8F5' : '#1C1C1C', 
-                            color: textMode === 'light' ? '#2C1810' : '#F5F0E8' 
-                          }}
-                        />
-                        {searchQuery && (
-                          <button 
-                            onClick={() => setSearchQuery('')} 
-                            className="absolute right-3 top-1/2 -translate-y-1/2 hover:opacity-80"
-                            style={{ color: textMode === 'light' ? '#2C1810' : '#F5F0E8' }}
-                          >
-                            <X size={14}/>
-                          </button>
-                        )}
-                      </div>
-
-                      {/* Theme Toggle Button */}
-                      <button
-                        onClick={() => setTextMode(m => m === 'light' ? 'dark' : 'light')}
-                        className="p-2.5 rounded-full transition-all duration-300 shadow-sm border flex items-center justify-center cursor-pointer hover:scale-105 active:scale-95 shrink-0"
-                        style={{
-                          backgroundColor: textMode === 'light' ? '#FAF8F5' : '#1C1C1C',
-                          borderColor: textMode === 'light' ? '#E0DACF' : '#333333',
-                          color: textMode === 'light' ? '#876445' : '#EEC373',
-                        }}
-                        title={textMode === 'light' ? 'Aktifkan Mode Gelap' : 'Aktifkan Mode Terang'}
-                      >
-                        {textMode === 'light' ? <Moon size={18} /> : <Sun size={18} />}
-                      </button>
-                    </div>
-                  </div>
-                  
-                  {/* Text Content Container */}
-                  <div 
-                    className="flex-1 overflow-y-auto w-full flex justify-center p-4 md:p-10 transition-colors duration-300"
-                    style={{ 
-                      backgroundColor: textMode === 'light' ? '#F5F0E8' : '#1C1C1C'
-                    }}
-                  >
-                    <div 
-                      className="w-full max-w-[800px] px-6 md:px-8 mb-20 transition-colors duration-300"
-                      style={{ 
-                        color: textMode === 'light' ? '#2C1810' : '#F5F0E8' 
-                      }}
-                    >
-                       {renderFormattedText()}
-                    </div>
-                  </div>
-                 </>
-               )}
+            <div className="flex-1 flex flex-col overflow-hidden relative">
+              <KitabReader cardId={card.id} fallbackText={card.txtContent} />
             </div>
           )}
 
