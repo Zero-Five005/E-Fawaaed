@@ -12,6 +12,7 @@ import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { store, AppData, CardItem } from './lib/store';
 import { AdminPanel } from './components/AdminPanel';
 import { ReaderOverlay } from './components/ReaderOverlay';
+import { KitabReader } from './components/KitabReader';
 
 gsap.registerPlugin(TextPlugin, ScrollTrigger);
 
@@ -323,6 +324,7 @@ export default function App() {
 
   const [appData, setAppData] = useState<AppData | null>(null);
   const [activeReaderCard, setActiveReaderCard] = useState<{card: CardItem, category: 'murojaah' | 'mutholaah' | 'produktif'} | null>(null);
+  const [mutholaahSubTab, setMutholaahSubTab] = useState<'pdf' | 'teks'>('pdf');
 
   const fetchAppData = async () => {
     const data = await store.getData();
@@ -1139,10 +1141,32 @@ export default function App() {
                     <h2 className="text-2xl md:text-3xl font-bold text-theme-darkest mb-1 md:mb-2">Jelajahi Wawasan Baru</h2>
                     <p className="text-theme-mid mb-6 md:mb-8 text-sm md:text-lg">Koleksi kitab berdasarkan kategori yang menanti untuk Anda pelajari.</p>
                     
-                    <MutholaahAccordion 
-                      data={appData?.mutholaahCards || []} 
-                      onCardClick={(card) => setActiveReaderCard({ card, category: 'mutholaah' })}
-                    />
+                    {/* Sub-tabs selector for PDF and Arabic Text accordions */}
+                    <div className="flex gap-2 p-1 bg-theme-darkest/5 border border-theme-light-mid/20 rounded-xl max-w-sm mb-6 select-none shadow-inner">
+                      <button
+                        onClick={() => setMutholaahSubTab('pdf')}
+                        className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-xs md:text-sm font-bold transition-all cursor-pointer ${mutholaahSubTab === 'pdf' ? 'bg-theme-darkest text-theme-lightest shadow-md' : 'text-theme-darkest/75 hover:bg-white/40'}`}
+                      >
+                        <FileText size={15} />
+                        <span>Pustaka PDF</span>
+                      </button>
+                      <button
+                        onClick={() => setMutholaahSubTab('teks')}
+                        className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-xs md:text-sm font-bold transition-all cursor-pointer ${mutholaahSubTab === 'teks' ? 'bg-theme-darkest text-theme-lightest shadow-md' : 'text-theme-darkest/75 hover:bg-white/40'}`}
+                      >
+                        <BookOpen size={15} />
+                        <span>Kitab Teks Arab</span>
+                      </button>
+                    </div>
+
+                    {mutholaahSubTab === 'pdf' ? (
+                      <MutholaahAccordion 
+                        data={appData?.mutholaahCards || []} 
+                        onCardClick={(card) => setActiveReaderCard({ card, category: 'mutholaah' })}
+                      />
+                    ) : (
+                      <KitabReader />
+                    )}
                   </div>
                </div>
             </div>

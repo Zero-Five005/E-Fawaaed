@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, Save, Upload, Plus, Trash2, Edit2, FileText, Image as ImageIcon } from 'lucide-react';
 import { store, AppData, CardItem } from '../lib/store';
+import { KitabAdminPanel } from './KitabAdminPanel';
 
 interface AdminPanelProps {
   onClose: () => void;
@@ -9,7 +10,7 @@ interface AdminPanelProps {
 
 export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose, onDataUpdate }) => {
   const [data, setData] = useState<AppData | null>(null);
-  const [activeTab, setActiveTab] = useState<'hero' | 'murojaah' | 'mutholaah' | 'produktif'>('murojaah');
+  const [activeTab, setActiveTab] = useState<'hero' | 'murojaah' | 'mutholaah' | 'produktif' | 'kitab'>('murojaah');
   
   // Edit state
   const [editingCard, setEditingCard] = useState<CardItem | null>(null);
@@ -91,7 +92,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose, onDataUpdate })
             { id: 'hero', label: 'Tampilan Beranda (Gambar)' },
             { id: 'murojaah', label: "Muroja'ah (PDF & TXT)" },
             { id: 'mutholaah', label: "Muthola'ah (Area PDF)" },
-            { id: 'produktif', label: "Produktif (Area TXT)" }
+            { id: 'produktif', label: "Produktif (Area TXT)" },
+            { id: 'kitab', label: "Kelola Kitab Arab (Teks)" }
           ].map(tab => (
             <button
               key={tab.id}
@@ -194,6 +196,18 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose, onDataUpdate })
                   )}
                 </div>
               )}
+            </div>
+          )}
+
+          {activeTab === 'kitab' && (
+            <div className="space-y-6">
+              <div className="pb-3 border-b border-theme-light-mid/20">
+                <h3 className="text-2xl font-bold text-theme-darkest">Kelola Kitab Kuning (Teks)</h3>
+                <p className="text-sm opacity-80 mt-1">
+                  Menambah, mengedit, dan menghapus kitab, bab, dan sub-bab dengan format teks Arab RTL.
+                </p>
+              </div>
+              <KitabAdminPanel />
             </div>
           )}
         </div>
